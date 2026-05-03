@@ -21,8 +21,18 @@ app_port = 8549
 cors_allowed_origins = "*"
 api_access_key = "Tang"
 llm_base_url = "https://zenmux.ai/api/v1"
-llm_api_key = "你的真实模型 key"
+llm_api_key = os.getenv("LLM_API_KEY", "")
 llm_model = "deepseek/deepseek-v4-pro-free"
+```
+
+模型 key 不写进代码，启动容器时用系统环境变量传入：
+
+```bash
+docker run -d --name lottery-api \
+  -p 8549:8549 \
+  -e LLM_API_KEY="你的真实模型 key" \
+  -v ./data:/app/data \
+  lottery-api:latest
 ```
 
 修改配置后需要重新 build 镜像。
@@ -47,6 +57,7 @@ docker rm lottery-api
 ```bash
 docker run -d --name lottery-api \
   -p 8549:8549 \
+  -e LLM_API_KEY="你的真实模型 key" \
   -v ./data:/app/data \
   lottery-api:latest
 ```
