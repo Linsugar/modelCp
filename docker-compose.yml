@@ -3,9 +3,7 @@ services:
     build: .
     container_name: lottery-api
     ports:
-      - "8000:8000"
-    env_file:
-      - .env
+      - "8549:8549"
     volumes:
       - ./data:/app/data
     restart: unless-stopped

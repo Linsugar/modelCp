@@ -1,3 +1,8 @@
+import logging
+import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,6 +23,8 @@ from app.security import require_client_api_key
 
 app = FastAPI(title="Lottery LLM API", version="0.1.0")
 _chat_service: ChatService | None = None
+logger = logging.getLogger("lottery_api.requests")
+logging.getLogger("uvicorn.access").disabled = True
 
 settings = get_settings()
 app.add_middleware(
@@ -27,6 +34,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_request_with_time(request, call_next):
+    started = time.perf_counter()
+    request_time = datetime.now(ZoneInfo(settings.log_timezone)).strftime("%Y-%m-%d %H:%M:%S")
+    client_host = request.client.host if request.client else "-"
+    method = request.method
+    path = request.url.path
+    if request.url.query:
+        path = f"{path}?{request.url.query}"
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        print(f"{request_time} {client_host} {method} {path} 500 {elapsed_ms:.2f}ms", flush=True)
+        logger.exception("Unhandled request error")
+        raise
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    print(f"{request_time} {client_host} {method} {path} {response.status_code} {elapsed_ms:.2f}ms", flush=True)
+    return response
 
 
 def get_chat_service(settings: Settings = Depends(get_settings)) -> ChatService:

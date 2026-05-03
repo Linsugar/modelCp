@@ -2,9 +2,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    APP_HOST=0.0.0.0 \
-    APP_PORT=8000
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
@@ -15,7 +13,8 @@ RUN pip install --upgrade pip \
 COPY app ./app
 COPY data ./data
 COPY main.py .
+COPY run.py .
 
-EXPOSE 8000
+EXPOSE 8549
 
-CMD ["sh", "-c", "uvicorn main:app --host ${APP_HOST:-0.0.0.0} --port ${APP_PORT:-8000}"]
+CMD ["python", "run.py"]
