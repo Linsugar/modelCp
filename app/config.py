@@ -37,6 +37,7 @@ class Settings(BaseModel):
     lottery_data_file: str = "data/lottery_results.json"
     lottery_auto_fetch: bool = True
     lottery_latest_if_date_missing: bool = True
+    lottery_history_count: int = 10
 
     max_history_messages: int = 12
 

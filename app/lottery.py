@@ -41,6 +41,71 @@ async def get_today_result(settings: Settings, game: LotteryGame) -> LotteryResu
     return await get_result_by_date(settings, game, date.today())
 
 
+async def get_recent_results(settings: Settings, game: LotteryGame, count: int) -> list[LotteryResult]:
+    """获取最近 count 期开奖记录，按日期倒序。"""
+    if game in {"ssq", "fc3d"}:
+        records = await _fetch_all_cwl_results(settings, game)
+    elif game in {"dlt", "pl3", "pl5"}:
+        records = await _fetch_all_sporttery_results(settings, game)
+    else:
+        records = []
+
+    if not records:
+        records = _fetch_all_local_results(settings, game)
+
+    records.sort(key=lambda item: item.draw_date, reverse=True)
+    return records[:count]
+
+
+async def _fetch_all_cwl_results(settings: Settings, game: LotteryGame) -> list[LotteryResult]:
+    names = {"ssq": "ssq", "fc3d": "3d"}
+    url = "https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice"
+    params = {"name": names[game], "issueCount": str(max(settings.lottery_history_count, 10))}
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            response = await client.get(url, params=params, headers=_browser_headers())
+            response.raise_for_status()
+            payload = response.json()
+    except Exception:
+        return []
+
+    records = payload.get("result") or payload.get("data") or []
+    return [_payload_to_result(record, game, date.today(), "official_cwl") for record in records if isinstance(record, dict)]
+
+
+async def _fetch_all_sporttery_results(settings: Settings, game: LotteryGame) -> list[LotteryResult]:
+    game_no = {"dlt": "85", "pl3": "35", "pl5": "350133"}
+    url = "https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry"
+    params = {
+        "gameNo": game_no[game],
+        "provinceId": "0",
+        "pageSize": str(max(settings.lottery_history_count, 10)),
+        "isVerify": "1",
+        "pageNo": "1",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            response = await client.get(url, params=params, headers=_browser_headers())
+            response.raise_for_status()
+            payload = response.json()
+    except Exception:
+        return []
+
+    value = payload.get("value") or {}
+    records = value.get("list") or payload.get("data") or []
+    return [_payload_to_result(record, game, date.today(), "official_sporttery") for record in records if isinstance(record, dict)]
+
+
+def _fetch_all_local_results(settings: Settings, game: LotteryGame) -> list[LotteryResult]:
+    path = Path(settings.lottery_data_file)
+    if not path.exists():
+        return []
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    records = payload.get(game, [])
+    return [_payload_to_result(record, game, date.today(), "local_file") for record in records if isinstance(record, dict)]
+
+
 async def get_result_by_date(settings: Settings, game: LotteryGame, draw_date: date) -> LotteryResult:
     remote = await _fetch_remote_result(settings, game, draw_date)
     if remote:

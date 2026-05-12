@@ -18,7 +18,7 @@ from app.models import (
     LotteryGame,
     LotteryResult,
 )
-from app.lottery import get_result_by_date, get_today_result
+from app.lottery import get_recent_results, get_result_by_date, get_today_result
 from app.prize import check_ticket
 from app.security import require_client_api_key
 
@@ -120,9 +120,11 @@ async def chat_generate(
     service: ChatService = Depends(get_chat_service),
 ) -> ChatGenerateResponse:
     today_result = await get_today_result(settings, request.game) if request.include_today_result else None
+    recent_results = await get_recent_results(settings, request.game, settings.lottery_history_count)
     session_id, reply, numbers, llm_used, generation_mode, candidates, decision_reason = await service.generate(
         request,
         today_result,
+        recent_results,
     )
     return ChatGenerateResponse(
         session_id=session_id,

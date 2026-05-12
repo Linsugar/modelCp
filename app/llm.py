@@ -36,6 +36,7 @@ class ChatService:
         self,
         request: ChatGenerateRequest,
         today_result: LotteryResult | None,
+        recent_results: list[LotteryResult] | None = None,
     ) -> tuple[str, str, list[str], bool, str, list[ModelCandidate], str | None]:
         session_id = request.session_id or uuid4().hex
         fallback_numbers = generate_numbers(request.game)
@@ -46,7 +47,7 @@ class ChatService:
             return session_id, reply, fallback_numbers, False, "fallback", [], "未配置大模型，使用本地随机生成。"
 
         if len(providers) == 1:
-            candidate = await self._call_candidate(providers[0], request, today_result, fallback_numbers, session_id)
+            candidate = await self._call_candidate(providers[0], request, today_result, recent_results, fallback_numbers, session_id)
             if candidate.error:
                 reply = _fallback_reply(fallback_numbers)
                 numbers = fallback_numbers
@@ -58,7 +59,7 @@ class ChatService:
 
         candidates = await asyncio.gather(
             *[
-                self._call_candidate(provider, request, today_result, fallback_numbers, session_id)
+                self._call_candidate(provider, request, today_result, recent_results, fallback_numbers, session_id)
                 for provider in providers
             ]
         )
@@ -72,6 +73,7 @@ class ChatService:
             providers[0],
             request,
             today_result,
+            recent_results,
             valid_candidates,
             fallback_numbers,
         )
@@ -83,10 +85,11 @@ class ChatService:
         provider: LLMProvider,
         request: ChatGenerateRequest,
         today_result: LotteryResult | None,
+        recent_results: list[LotteryResult] | None,
         fallback_numbers: list[str],
         key: HistoryKey,
     ) -> ModelCandidate:
-        messages = self._build_generation_messages(request, today_result, fallback_numbers, key)
+        messages = self._build_generation_messages(request, today_result, recent_results, fallback_numbers, key)
         try:
             content = await _chat(provider, messages, self.settings.llm_timeout_seconds, temperature=0.8)
         except Exception as exc:
@@ -114,14 +117,22 @@ class ChatService:
         judge: LLMProvider,
         request: ChatGenerateRequest,
         today_result: LotteryResult | None,
+        recent_results: list[LotteryResult] | None,
         candidates: list[ModelCandidate],
         fallback_numbers: list[str],
     ) -> tuple[str, list[str], str]:
+        history_summary = None
+        if recent_results:
+            history_summary = [
+                {"draw_date": str(r.draw_date), "issue": r.issue, "numbers": r.numbers}
+                for r in recent_results
+            ]
         payload = {
             "game": request.game,
             "game_name": GAME_NAMES[request.game],
             "rules": _rules_prompt(request.game),
             "today_result": today_result.model_dump(mode="json") if today_result else None,
+            "recent_results": history_summary,
             "user_message": request.message,
             "candidates": [candidate.model_dump() for candidate in candidates],
         }
@@ -131,6 +142,7 @@ class ChatService:
                 "content": (
                     "你是彩票号码生成结果评审助手。比较多个模型给出的候选号码，"
                     "可以选择其中一组，也可以综合后重新生成一组。必须严格遵守玩法规则，"
+                    "可结合近期开奖数据的频率分布、冷热号码来综合判断，"
                     "必须说明号码仅供娱乐参考，不能承诺中奖或暗示可预测开奖结果。"
                     "只返回 JSON，格式为："
                     "{\"final_numbers\":[\"01\"],\"reply\":\"...\",\"decision_reason\":\"...\"}"
@@ -159,14 +171,26 @@ class ChatService:
         self,
         request: ChatGenerateRequest,
         today_result: LotteryResult | None,
+        recent_results: list[LotteryResult] | None,
         fallback_numbers: list[str],
         key: HistoryKey,
     ) -> list[dict[str, str]]:
+        history_summary = None
+        if recent_results:
+            history_summary = [
+                {
+                    "draw_date": str(r.draw_date),
+                    "issue": r.issue,
+                    "numbers": r.numbers,
+                }
+                for r in recent_results
+            ]
         user_context = {
             "game": request.game,
             "game_name": GAME_NAMES[request.game],
             "rules": _rules_prompt(request.game),
             "today_result": today_result.model_dump(mode="json") if today_result else None,
+            "recent_results": history_summary,
             "fallback_numbers_if_needed": fallback_numbers,
             "user_message": request.message,
         }
@@ -176,7 +200,9 @@ class ChatService:
                 "content": (
                     "你是彩票号码生成助手。必须严格按玩法规则输出一组号码。"
                     "不要输出多组候选，不要承诺中奖，不要暗示可以预测开奖结果。"
-                    "输出要简洁，包含推荐号码和一句理由。"
+                    "你可以分析近期开奖数据中各号码的出现频率、冷热分布，"
+                    "结合历史走势为用户推荐号码，但必须说明仅供娱乐参考。"
+                    "输出要简洁，包含推荐号码和一句分析理由。"
                 ),
             },
             *list(self._history[key]),
