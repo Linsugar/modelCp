@@ -16,9 +16,9 @@ class Settings(BaseModel):
     api_access_key: str = "Tang"
 
     # 单模型配置。真实模型 key 从系统环境变量 LLM_API_KEY 读取，不要写进代码。
-    llm_base_url: str = "https://zenmux.ai/api/v1"
+    llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = os.getenv("LLM_API_KEY", "")
-    llm_model: str = "deepseek/deepseek-v4-pro-free"
+    llm_model: str = "deepseek-v4-flash"
     llm_provider_name: str = "default"
     llm_timeout_seconds: float = 60
 

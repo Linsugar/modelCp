@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI
+from starlette.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings, get_settings
@@ -46,17 +47,42 @@ async def log_request_with_time(request, call_next):
     if request.url.query:
         path = f"{path}?{request.url.query}"
 
+    # 读取请求体
+    body_bytes = await request.body()
+    request_body = body_bytes.decode("utf-8", errors="replace")[:2000] if body_bytes else ""
+
+    print(
+        f"{request_time} {client_host} {method} {path}",
+        flush=True,
+    )
+    if request_body:
+        print(f"  -> request: {request_body}", flush=True)
+
     try:
         response = await call_next(request)
     except Exception:
         elapsed_ms = (time.perf_counter() - started) * 1000
-        print(f"{request_time} {client_host} {method} {path} 500 {elapsed_ms:.2f}ms", flush=True)
+        print(f"  <- 500 {elapsed_ms:.2f}ms", flush=True)
         logger.exception("Unhandled request error")
         raise
 
+    # 读取响应体
+    response_body = b""
+    async for chunk in response.body_iterator:
+        response_body += chunk
+    response_text = response_body.decode("utf-8", errors="replace")[:2000]
+
     elapsed_ms = (time.perf_counter() - started) * 1000
-    print(f"{request_time} {client_host} {method} {path} {response.status_code} {elapsed_ms:.2f}ms", flush=True)
-    return response
+    print(f"  <- {response.status_code} {elapsed_ms:.2f}ms", flush=True)
+    if response_text:
+        print(f"  <- response: {response_text}", flush=True)
+
+    return Response(
+        content=response_body,
+        status_code=response.status_code,
+        headers=dict(response.headers),
+        media_type=response.media_type,
+    )
 
 
 def get_chat_service(settings: Settings = Depends(get_settings)) -> ChatService:

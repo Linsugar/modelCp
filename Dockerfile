@@ -1,8 +1,15 @@
 FROM python:3.12-slim
 
+ARG VERSION=1.0.0
+ARG BUILD_TIME=unknown
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
+
+LABEL version="${VERSION}" \
+      build_time="${BUILD_TIME}" \
+      description="Lottery LLM API"
 
 WORKDIR /app
 
